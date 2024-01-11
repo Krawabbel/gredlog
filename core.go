@@ -4,12 +4,23 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strings"
 	"time"
 )
 
-func Run(src Source, host string, port int, key string, interval time.Duration, pattern string, verbose bool, attempts int) error {
+func Run(input, host string, port int, key string, interval time.Duration, pattern string, verbose bool) error {
 
-	db, err := NewClient(host, port, attempts)
+	src, err := NewSource(input)
+	if err != nil {
+		return err
+	}
+
+	if key == "" || strings.Contains(key, " ") {
+		return fmt.Errorf("key must not be empty or contain blanks")
+	}
+
+	addr := fmt.Sprintf("%s:%d", host, port)
+	db, err := NewClient(addr)
 	if err != nil {
 		return err
 	}
@@ -25,7 +36,11 @@ func Run(src Source, host string, port int, key string, interval time.Duration, 
 		t := <-tic.C
 		err := step(src, key, t, re, verbose, db)
 		if err != nil {
-			log.Println(err)
+			log.Printf("error encountered: %s\n", err)
+			err := db.Restart()
+			if err != nil {
+				log.Printf("restarting REDIS client failed: %s\n", err)
+			}
 		}
 	}
 }
@@ -42,7 +57,7 @@ func step(src Source, key string, t time.Time, re *regexp.Regexp, verbose bool, 
 	}
 	id, err := store(db, key, timestamp, string(val))
 	if err != nil {
-		return fmt.Errorf("error storing value: %s", err)
+		return err
 	}
 	if verbose {
 		log.Printf("[%s] data: %s, time: %d -> id: %s", key, string(val), timestamp, id)
@@ -56,7 +71,7 @@ func store(c Client, key string, timestamp int64, val string) (string, error) {
 	q := fmt.Sprintf("XADD %s * time %d data %s", key, timestamp, val)
 	r, err := c.Request(q)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error storing value %s: %s", val, err)
 	}
 	m := id_validator.FindStringSubmatch(r)
 	if m == nil {

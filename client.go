@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -10,6 +9,7 @@ import (
 
 type Client interface {
 	Request(string) (string, error)
+	Restart() error
 	Close() error
 }
 
@@ -17,46 +17,13 @@ type client struct {
 	conn net.Conn
 }
 
-func NewClient(host string, port, attempts int) (Client, error) {
+func NewClient(addr string) (Client, error) {
 	c := new(client)
-	addr := fmt.Sprintf("%s:%d", host, port)
-	err := c.Connect(addr)
-	if err == nil {
-		return c, nil
-	}
-	log.Println(err)
-	err = c.Reconnect(attempts)
+	err := c.connect(addr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("establishing REDIS client connection failed: %s", err)
 	}
 	return c, nil
-}
-
-func (c *client) Reconnect(attempts int) error {
-	for {
-		err := c.Connect(c.conn.RemoteAddr().String())
-		if err == nil {
-			return nil
-		}
-		log.Println(err)
-		attempts--
-		if attempts < 0 {
-			return fmt.Errorf("maximum number of failed reconnection attempts exceeded")
-		}
-	}
-}
-
-func (c *client) Connect(addr string) error {
-	conn, err := net.Dial("tcp", addr)
-	if err != nil {
-		return err
-	}
-	c.conn = conn
-	err = c.handshake("PING", "PONG")
-	if err != nil {
-		return fmt.Errorf("error connecting to %s: probably not a REDIS database: %s", addr, err)
-	}
-	return c.conn.Close()
 }
 
 func (c *client) Close() error {
@@ -71,15 +38,38 @@ func (c *client) Request(cmd string) (string, error) {
 	}
 	err := c.write(q)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("posting request failed: %s", err)
 	}
 	return c.read()
+}
+
+func (c *client) connect(addr string) error {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("error connecting to %s (REDIS server probably not running): %s", addr, err)
+	}
+	c.conn = conn
+	err = c.handshake("PING", "PONG")
+	if err != nil {
+		return fmt.Errorf("error connecting to %s (probably not a REDIS database): %s", addr, err)
+	}
+	return nil
+}
+
+func (c *client) Restart() error {
+	addr := c.conn.RemoteAddr().String()
+	_ = c.conn.Close()
+	err := c.connect(addr)
+	if err != nil {
+		return fmt.Errorf("failed to reconnect to %s: %s", addr, err)
+	}
+	return nil
 }
 
 func (c *client) handshake(given, want string) error {
 	have, err := c.Request(given)
 	if err != nil {
-		return err
+		return fmt.Errorf("handshake failed: %s", err)
 	}
 	if have != want {
 		return fmt.Errorf("handshake failed: given '%s', expected '%s', got '%s'", given, want, have)
@@ -92,7 +82,7 @@ func (c *client) write(s string) error {
 	n, err := c.conn.Write(b)
 	switch {
 	case err != nil:
-		return err
+		return fmt.Errorf("error writing to REDIS database: %s", err)
 	case n != len(b):
 		return fmt.Errorf("error writing to REDIS database: only %d of %d bytes sent", n, len(b))
 	default:
