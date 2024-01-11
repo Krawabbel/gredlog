@@ -17,12 +17,14 @@ type client struct {
 	conn net.Conn
 }
 
-func NewClient(addr string, attempts int) (Client, error) {
+func NewClient(host string, port, attempts int) (Client, error) {
 	c := new(client)
+	addr := fmt.Sprintf("%s:%d", host, port)
 	err := c.Connect(addr)
 	if err == nil {
 		return c, nil
 	}
+	log.Println(err)
 	err = c.Reconnect(attempts)
 	if err != nil {
 		return nil, err

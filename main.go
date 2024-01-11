@@ -18,6 +18,7 @@ func main() {
 	host := flag.String("host", "127.0.0.1", "host address of the REDIS database")
 	port := flag.Int("port", 6379, "port of the REDIS database")
 	key := flag.String("key", "redlog", "key for data in REDIS database")
+	attempts := flag.Int("attempts", 1, "max. number or re-connect attempts for REDIS database")
 
 	verbose := flag.Bool("verbose", true, "print logged values")
 
@@ -37,5 +38,5 @@ func main() {
 		log.Fatalf("cannot deduce source type of '%s'", *input)
 	}
 
-	log.Fatal(Run(src, *host, *port, *key, *interval, *pattern, *verbose))
+	log.Fatal(Run(src, *host, *port, *key, *interval, *pattern, *verbose, *attempts))
 }

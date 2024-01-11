@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-func Run(src Source, host string, port int, key string, interval time.Duration, pattern string, verbose bool) error {
+func Run(src Source, host string, port int, key string, interval time.Duration, pattern string, verbose bool, attempts int) error {
 
-	db, err := NewClient(host, port)
+	db, err := NewClient(host, port, attempts)
 	if err != nil {
 		return err
 	}
